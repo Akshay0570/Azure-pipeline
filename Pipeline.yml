@@ -1,0 +1,188 @@
+pool:
+  name: TMSLinuxAgent
+  demands: java
+
+#Your build pipeline references an undefined variable named ‘pwd’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+#Your build pipeline references an undefined variable named ‘pwd’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+#Your build pipeline references an undefined variable named ‘pwd’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+#Your build pipeline references an undefined variable named ‘pwd’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+#Your build pipeline references an undefined variable named ‘pwd’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+#Your build pipeline references an undefined variable named ‘pwd’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+#Your build pipeline references an undefined variable named ‘pwd’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+#Your build pipeline references an undefined variable named ‘pwd’. Create or edit the build pipeline for this YAML file, define the variable on the Variables tab. See https://go.microsoft.com/fwlink/?linkid=865972
+variables:
+  BuildConfiguration: 'Release'
+
+steps:
+- task: Foxholenl.Gitleaks.foxholenl-gitleaks.Gitleaks@2
+  displayName: 'Security Scan'
+  inputs:
+    predefinedconfigfile: UDMSecretChecksv8.toml
+    scanmode: all
+    taskfail: false
+    reportartifactname: 'Security-Scan'
+    reportformat: json
+    reportfolder: '$(Build.ArtifactStagingDirectory)'
+    reportname: 'gitleaks-scan'
+    taskfailonexecutionerror: false
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifact: drop'
+  enabled: false
+
+- script: |
+   echo "Current Directory: $(pwd)"
+   chmod +x gitleaks-scan.json
+   ls -al
+   echo "$(Build.BuildNumber)"
+   curl --location --request POST 'http://10.1.0.5:8080/api/v2/import-scan/' \
+   -H "Authorization: Token df8257344d58346772bad97d81c5964c91f68338" \
+   --form 'engagement="1"' \
+   --form 'verified="true"' \
+   --form 'active="true"' \
+   --form 'lead="1"' \
+   --form 'tags="$(Build.BuildNumber)"' \
+   --form 'scan_type="Gitleaks Scan"' \
+   --form 'minimum_severity="Info"' \
+   --form 'skip_duplicates="true"' \
+   --form 'close_old_findings="false"' -F 'file=@"gitleaks-scan.json"' -v
+   
+  workingDirectory: '$(Build.ArtifactStagingDirectory)/'
+  displayName: 'Pushing secrets report to Defectdojo'
+
+- task: SonarSource.sonarqube.15B84CA1-B62F-4A2A-A403-89B77A063157.SonarQubePrepare@5
+  displayName: 'Prepare analysis on SonarQube'
+  inputs:
+    SonarQube: 'SonarQube-Endpoint'
+    projectKey: 'TrainingMonitoringSystem_TrainingMonitoringSystem_AY2HmcGhf01TjEGQFXGG'
+    projectName: AppSec
+    extraProperties: |
+     # Additional properties that will be passed to the scanner, 
+     # Put one key=value per line, example:
+     # sonar.exclusions=**/*.bin
+     sonar.analysis.format=json 
+     sonar.analysis.outputFile=resultsonar.json
+
+- task: DotNetCoreCLI@2
+  displayName: 'dotnet restore'
+  inputs:
+    command: restore
+    projects: '**/TrainingMonitoringSystem.API.csproj'
+
+- task: DotNetCoreCLI@2
+  displayName: 'dotnet build'
+  inputs:
+    projects: '**/TrainingMonitoringSystem.API.csproj'
+
+- task: DotNetCoreCLI@2
+  displayName: 'dotnet publish'
+  inputs:
+    command: publish
+    arguments: '--configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+
+- task: SonarSource.sonarqube.6D01813A-9589-4B15-8491-8164AEB38055.SonarQubeAnalyze@5
+  displayName: 'Run Code Analysis'
+
+- task: SonarSource.sonarqube.291ed61f-1ee4-45d3-b1b0-bf822d9095ef.SonarQubePublish@5
+  displayName: 'Publish Quality Gate Result'
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Build-Artifact'
+
+- script: |
+   echo "Current Directory: $(pwd)"
+   rm dependency-check-report.xml || true
+   ls -al
+   /home/abp-vm-teamappdevsec-admin/dependency-check/bin/dependency-check.sh --project "AppSec" --nvdApiKey 95ec5c04-15e7-4e85-aa03-5a61d7209429 --prettyPrint --format XML --scan TrainingMonitoringSystem.API.zip 
+   ls -al
+   echo "Current Directory: $(pwd)"
+   
+   
+  workingDirectory: '$(Build.ArtifactStagingDirectory)/'
+  displayName: 'Dependency Check Scanning'
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Dependency-Check-Artifact'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)/dependency-check-report.xml'
+    ArtifactName: 'Dependency-Check'
+
+- script: |
+   echo "Current Directory: $(pwd)"
+   chmod +x dependency-check-report.xml
+   echo "$(Build.BuildNumber)"
+   curl --location --request POST 'http://10.1.0.5:8080/api/v2/import-scan/' \
+   -H "Authorization: Token df8257344d58346772bad97d81c5964c91f68338" \
+   --form 'engagement="1"' \
+   --form 'verified="true"' \
+   --form 'active="true"' \
+   --form 'lead="1"' \
+   --form 'tags="$(Build.BuildNumber)"' \
+   --form 'scan_type="Dependency Check Scan"' \
+   --form 'minimum_severity="Info"' \
+   --form 'skip_duplicates="true"' \
+   --form 'close_old_findings="false"' -F 'file=@"dependency-check-report.xml"' -v
+   
+  workingDirectory: '$(Build.ArtifactStagingDirectory)/'
+  displayName: 'Pushing Dependency Check report to Defectdojo'
+
+- bash: |
+   chmod -R 777  ./
+   docker run --rm -v $(pwd):/zap/wrk/:rw -t owasp/zap2docker-stable zap-full-scan.py -t https://tmsdevforappsec.azurewebsites.net -g gen.conf -x OWASP-ZAP-Report.xml -r OWASP-ZAP-Report.html
+   ls -al
+   cat OWASP-ZAP-Report.html
+   
+  displayName: 'ZAP Scanning'
+
+- task: PublishPipelineArtifact@1
+  displayName: 'ZAP-Artifact'
+  inputs:
+    targetPath: '$(System.DefaultWorkingDirectory)/OWASP-ZAP-Report.xml'
+    artifact: 'ZAP-Result'
+
+- script: |
+   echo "Current Directory: $(pwd)"
+   chmod 777 OWASP-ZAP-Report.xml
+   echo "$(Build.BuildNumber)"
+   curl --location --request POST 'http://10.1.0.5:8080/api/v2/import-scan/' \
+   -H "Authorization: Token df8257344d58346772bad97d81c5964c91f68338" \
+   --form 'engagement="1"' \
+   --form 'verified="true"' \
+   --form 'active="true"' \
+   --form 'lead="1"' \
+   --form 'tags="$(Build.BuildNumber)"' \
+   --form 'scan_type="ZAP Scan"' \
+   --form 'minimum_severity="Info"' \
+   --form 'skip_duplicates="true"' \
+   --form 'close_old_findings="false"' -F 'file=@"OWASP-ZAP-Report.xml"' -v
+   
+  workingDirectory: '$(System.DefaultWorkingDirectory)/'
+  displayName: 'Pushing ZAP (DAST) report to Defectdojo'
+
+- script: 'docker run --rm -v "$(pwd)":/data uzyexe/nmap "tmsdevforappsec.azurewebsites.net" -sS -sV -oX nmap-report.xml'
+  displayName: 'Nmap Scanning'
+
+- task: PublishPipelineArtifact@1
+  displayName: 'Nmap-Artifact'
+  inputs:
+    targetPath: '$(System.DefaultWorkingDirectory)/nmap-report.xml'
+    artifact: 'Nmap-Result'
+
+- script: |
+   echo "Current Directory: $(pwd)"
+   chmod +x nmap-report.xml
+   echo "$(Build.BuildNumber)"
+   curl --location --request POST 'http://10.1.0.5:8080/api/v2/import-scan/' \
+   -H "Authorization: Token df8257344d58346772bad97d81c5964c91f68338" \
+   --form 'engagement="1"' \
+   --form 'verified="true"' \
+   --form 'active="true"' \
+   --form 'lead="1"' \
+   --form 'tags="$(Build.BuildNumber)"' \
+   --form 'scan_type="Nmap Scan"' \
+   --form 'minimum_severity="Info"' \
+   --form 'skip_duplicates="true"' \
+   --form 'close_old_findings="false"' -F 'file=@"nmap-report.xml"' -v
+   
+  workingDirectory: '$(System.DefaultWorkingDirectory)/'
+  displayName: 'Pushing Nmap (Port scan) report to Defectdojo'
